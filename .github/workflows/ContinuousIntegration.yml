@@ -1,0 +1,168 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main, development]
+  push:
+    branches: [main, development]
+
+env:
+  ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+  DB_URI: "sqlite:///./database.db"
+  DB_URI_TEST: "sqlite:///./test.db"
+  JWT_ALGORITHM: "HS256"
+  JWT_SECRET: ${{ secrets.JWT_SECRET }}
+  VERSION: "1.0.3"
+
+jobs:
+  flow-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if is Valid Pull Request
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            if [ "${{ github.base_ref }}" == "main" ]; then
+              if [ "${{ github.head_ref }}" != "development" ]; then
+                exit 1
+              fi
+            fi
+          fi
+  tests:
+    runs-on: ubuntu-latest
+    needs: flow-validation
+
+    steps:
+      - name: Repository Checkout
+        uses: actions/checkout@v2
+
+      - name: Use Python Version
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.9.6"
+          architecture: "x64"
+
+      - name: Requirements Cache
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Requirements
+        run: pip install -r requirements.txt
+
+      - name: Run Formatter
+        run: autopep8 --in-place --recursive --exclude .git,__pycache__,.virtualenvs .
+
+      - name: Run Linter
+        run: flake8 . --count --ignore E501,F401,E712 --show-source --statistics --exclude .git,__pycache__,.virtualenvs
+
+      - name: Run Tests and Generate Coverage Report
+        run: pytest
+
+      - name: Upload Code Coverage Report to GitHub
+        uses: actions/upload-artifact@v2
+        with:
+          name: code-coverage
+          path: coverage_report/
+
+      - name: Upload Code Coverage Report to Codecov
+        uses: codecov/codecov-action@v2
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage_report/coverage.xml
+          flags: coverage
+          name: code-coverage
+          fail_ci_if_error: true
+          verbose: true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: tests
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Login to DockerHub Account
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate Tag Name Based on Target Branch
+        id: get_tag
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF##*/}" == "main" ]; then
+             echo "##[set-output name=tag;]$(echo "latest")"
+          else
+             echo "##[set-output name=tag;]$(echo "staging-latest")"
+          fi
+
+      - name: Repository Checkout
+        uses: actions/checkout@v2
+
+      - name: Build and Push Staging Image to DockerHub
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: jsmsalt/job-api:${{ steps.get_tag.outputs.tag }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Generate Deploy Variables Based on Target Branch
+        id: get_variables
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF##*/}" == "main" ]; then
+             echo "##[set-output name=username;]$(echo "${{ secrets.DROPLET_PRODUCTION_USERNAME }}")"
+             echo "##[set-output name=tag;]$(echo "latest")"
+             echo "##[set-output name=droplet_name;]$(echo "production")"
+          else
+             echo "##[set-output name=username;]$(echo "${{ secrets.DROPLET_STAGING_USERNAME }}")"
+             echo "##[set-output name=tag;]$(echo "staging-latest")"
+             echo "##[set-output name=droplet_name;]$(echo "staging")"
+          fi
+
+      - name: Install doctl from DigitalOcean
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Delete Previous Droplets
+        run: doctl compute droplet delete ${{ steps.get_variables.outputs.droplet_name }} --force || true
+
+      - name: Create Droplet in DigitalOcean
+        id: create_droplet
+        run: |
+          output=$(doctl compute droplet create ${{ steps.get_variables.outputs.droplet_name }} --size s-1vcpu-1gb-amd \
+            --image docker-20-04 --region sfo3 --ssh-keys ${{ secrets.DROPLET_SSH_PUBLIC_KEY }} \
+            --tag-name ${{ steps.get_variables.outputs.droplet_name }} --wait)
+          IP="$(echo $output | cut -d' ' -f22)"
+          echo "##[set-output name=ip;]$(echo $IP)"
+
+      - name: Deploy to Staging Server in DigitalOcean Using SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ steps.create_droplet.outputs.ip }}
+          username: ${{ steps.get_variables.outputs.username }}
+          key: ${{ secrets.DROPLET_SSH_PRIVATE_KEY }}
+          port: 22
+          script_stop: true
+          envs: JWT_SECRET,JWT_ALGORITHM,DB_URI,DB_URI_TEST,ADMIN_PASSWORD,VERSION
+          script: |
+            docker pull jsmsalt/job-api:${{ steps.get_variables.outputs.tag }}
+            docker run -d -e JWT_SECRET=$JWT_SECRET -e JWT_ALGORITHM=$JWT_ALGORITHM \
+              -e DB_URI=$DB_URI -e DB_URI_TEST=$DB_URI_TEST -e ADMIN_PASSWORD=$ADMIN_PASSWORD \
+              -e VERSION=$VERSION -p 80:80 --rm jsmsalt/job-api:${{ steps.get_variables.outputs.tag }}
+
+      - name: Print API Documentation Link
+        uses: Code-Hex/neo-cowsay-action@v1
+        with:
+          message: "http://${{ steps.create_droplet.outputs.ip }}/docs"
