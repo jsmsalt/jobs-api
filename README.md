@@ -1,7 +1,8 @@
+![](https://github.com/jsmsalt/jobs-api/actions/workflows/ContinuousIntegration.yml/badge.svg?event=push)
+
 # Job Platform API
 
 Simple jobs platform, using FastAPI (Starlette + Pydantic), SQLModel (SQLAlchemy + Pydantic) and Alembic for migrations
-
 
 ## How to use it
 

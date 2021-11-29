@@ -157,6 +157,7 @@ jobs:
           script_stop: true
           envs: JWT_SECRET,JWT_ALGORITHM,DB_URI,DB_URI_TEST,ADMIN_PASSWORD,VERSION
           script: |
+            sleep 10
             docker pull jsmsalt/job-api:${{ steps.get_variables.outputs.tag }}
             docker run -d -e JWT_SECRET=$JWT_SECRET -e JWT_ALGORITHM=$JWT_ALGORITHM \
               -e DB_URI=$DB_URI -e DB_URI_TEST=$DB_URI_TEST -e ADMIN_PASSWORD=$ADMIN_PASSWORD \
