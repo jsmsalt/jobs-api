@@ -1,0 +1,11 @@
+[run]
+omit =
+  *__init__*
+  *.virtualenvs*
+
+[xml]
+directory = coverage_report
+
+[report]
+show_missing = true
+precision = 2

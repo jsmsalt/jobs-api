@@ -1,0 +1,32 @@
+repo:
+  - "*"
+
+tests:
+  - tests/**/*.py
+
+migrations:
+  - migrations/**/*.py
+
+controllers:
+  - controllers/**/*.py
+
+models:
+  - models/**/*.py
+
+services:
+  - services/**/*.py
+
+repositories:
+  - repositories/**/*.py
+
+schemas:
+  - schemas/**/*.py
+
+helpers:
+  - helpers/**/*.py
+
+workflows:
+  - .github/workflows/**/*.yml
+
+requirements:
+  - requirements.txt
