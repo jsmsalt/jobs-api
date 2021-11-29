@@ -26,7 +26,7 @@ class TestJob:
             'Authorization': f'Bearer {access_token}'
         })
 
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_201_CREATED
 
     def test_get(self, client: TestClient):
         access_token = TestAuth().test_login(client)
