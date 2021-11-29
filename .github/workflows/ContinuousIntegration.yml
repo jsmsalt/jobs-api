@@ -121,21 +121,36 @@ jobs:
         shell: bash
         run: |
           if [ "${GITHUB_REF##*/}" == "main" ]; then
-             echo "##[set-output name=host;]$(echo "${{ secrets.DROPLET_PRODUCTION_HOST }}")"
-             echo "##[set-output name=docs;]$(echo "http://${{ secrets.DROPLET_PRODUCTION_HOST }}/docs")"
              echo "##[set-output name=username;]$(echo "${{ secrets.DROPLET_PRODUCTION_USERNAME }}")"
              echo "##[set-output name=tag;]$(echo "latest")"
+             echo "##[set-output name=droplet_name;]$(echo "production")"
           else
-             echo "##[set-output name=host;]$(echo "${{ secrets.DROPLET_STAGING_HOST }}")"
-             echo "##[set-output name=docs;]$(echo "http://${{ secrets.DROPLET_STAGING_HOST }}/docs")"
              echo "##[set-output name=username;]$(echo "${{ secrets.DROPLET_STAGING_USERNAME }}")"
              echo "##[set-output name=tag;]$(echo "staging-latest")"
+             echo "##[set-output name=droplet_name;]$(echo "staging")"
           fi
+
+      - name: Install doctl from DigitalOcean
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Delete Previous Droplets
+        run: doctl compute droplet delete ${{ steps.get_variables.outputs.droplet_name }} --force || true
+
+      - name: Create Droplet in DigitalOcean
+        id: create_droplet
+        run: |
+          output=$(doctl compute droplet create ${{ steps.get_variables.outputs.droplet_name }} --size s-1vcpu-1gb-amd \
+            --image docker-20-04 --region sfo3 --ssh-keys ${{ secrets.DROPLET_SSH_PUBLIC_KEY }} \
+            --tag-name ${{ steps.get_variables.outputs.droplet_name }} --wait)
+          IP="$(echo $output | cut -d' ' -f22)"
+          echo "##[set-output name=ip;]$(echo $IP)"
 
       - name: Deploy to Staging Server in DigitalOcean Using SSH
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ steps.get_variables.outputs.host }}
+          host: ${{ steps.create_droplet.outputs.ip }}
           username: ${{ steps.get_variables.outputs.username }}
           key: ${{ secrets.DROPLET_SSH_PRIVATE_KEY }}
           port: 22
@@ -159,4 +174,4 @@ jobs:
       - name: Print API Documentation Link
         uses: Code-Hex/neo-cowsay-action@v1
         with:
-          message: ${{ steps.get_variables.outputs.docs }}
+          message: "http://${{ steps.create_droplet.outputs.ip }}/docs"
