@@ -147,6 +147,9 @@ jobs:
           IP="$(echo $output | cut -d' ' -f22)"
           echo "##[set-output name=ip;]$(echo $IP)"
 
+      - name: Wait Before Deploy
+        run: sleep 30
+
       - name: Deploy to Staging Server in DigitalOcean Using SSH
         uses: appleboy/ssh-action@master
         with:
