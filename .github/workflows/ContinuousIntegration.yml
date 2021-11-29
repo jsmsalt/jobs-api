@@ -122,10 +122,12 @@ jobs:
         run: |
           if [ "${GITHUB_REF##*/}" == "main" ]; then
              echo "##[set-output name=host;]$(echo "${{ secrets.DROPLET_PRODUCTION_HOST }}")"
+             echo "##[set-output name=docs;]$(echo "http://${{ secrets.DROPLET_PRODUCTION_HOST }}/docs")"
              echo "##[set-output name=username;]$(echo "${{ secrets.DROPLET_PRODUCTION_USERNAME }}")"
              echo "##[set-output name=tag;]$(echo "latest")"
           else
              echo "##[set-output name=host;]$(echo "${{ secrets.DROPLET_STAGING_HOST }}")"
+             echo "##[set-output name=docs;]$(echo "http://${{ secrets.DROPLET_STAGING_HOST }}/docs")"
              echo "##[set-output name=username;]$(echo "${{ secrets.DROPLET_STAGING_USERNAME }}")"
              echo "##[set-output name=tag;]$(echo "staging-latest")"
           fi
@@ -157,4 +159,4 @@ jobs:
       - name: Print API Documentation Link
         uses: Code-Hex/neo-cowsay-action@v1
         with:
-          message: "http://${{ steps.get_variables.outputs.host }}/docs"
+          message: ${{ steps.get_variables.outputs.docs }}
